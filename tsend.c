@@ -13,7 +13,7 @@
 #define PURPOSE "Send all EM5 readout buffer contents via TCP to the server."
 #define CONNECT_TIMEOUT 1
 
-const char * USAGE = "<buf size> <host> <port> [-D device] [-n count] \n";
+const char * USAGE = "<buf size> <host> <port> [-D device] [-n count] [-h] \n";
 const char * ARGS = "\n"
 "  <buf size>: kernel buffer size (in megabytes) \n"
 "  <host>: listening server IP \n"
