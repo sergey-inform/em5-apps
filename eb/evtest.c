@@ -49,7 +49,7 @@ enum err_num {
 
 	ZEROES, ONES,
 	NO_FE_BEFORE_BE, NO_BE_BEFORE_FE,
-	NO_1F_BEFORE_FE, WRONG_wcount_IN_1F, FILE_LEN_ODD,
+	NO_1F_BEFORE_FE, WRONG_LEN_1F, FILE_LEN_ODD,
 
 	WARNING, //warnings
 	UNKNOWN, ADDR_ORDER, NO_SPILL_INFO,
@@ -62,7 +62,7 @@ char * err_str[] = {
 	[NO_FE_BEFORE_BE]= "A new 0xBE before 0xFE.",
 	[NO_BE_BEFORE_FE]= "0xFE without corresponding 0xBE.",
 	[NO_1F_BEFORE_FE] = "No 0x1f before 0xfe",
-	[WRONG_wcount_IN_1F] = "Wrong wcounter value in 0x1f",
+	[WRONG_LEN_1F] = "Event length counter value != actual event length.",
 	[FILE_LEN_ODD] = "File length is not a multiple of 4 bytes",
 	[UNKNOWN] = "Unknown event type",
 	[ADDR_ORDER] = "Miss addresses are not in ascending order",
@@ -186,14 +186,22 @@ int main(int argc, char *argv[])
 			sp.evt_count++;
 			evt.ts -= sp.ts_first; //make the timestamp relative to a spill
 
-			evt.wlen = wpos - evt.wpos;
+			evt.wlen_1f = backlog[prev].data;
 			evt.opened=false;
+			
+			if (evt.wlen!= evt.wlen_1f) {
+				err = WRONG_LEN_1F;
+				fprintf(stderr, "len:%d len_1f:%d\n", evt.wlen, evt.wlen_1f);
+				continue;
+			}
 
-			printf("%u %d %d\n", evt.ts,  evt.wlen, evt.wlen_1f);
 			break;
 
 		case 0x1F:
 		default:
+			if(evt.opened) {
+				evt.wlen++;	
+			}
 			break;
 		}
 		
@@ -207,16 +215,19 @@ int main(int argc, char *argv[])
 
 	///print error
 	if (!err) {
-		printf("ok\n");
+		//if verbose
+			printf("ok\n");
 		return 0;
 	}
 	else {
-		printf("err\n");
-		fprintf(stderr, "wPos: %d Word: 0x%02x%02x %02x%02x  Err: %s \n",
+		fprintf(stderr, "wPos: %d Word: 0x%04x %04x  Err: %s \n",
 				wpos,
-				backlog[cur].byte[0], backlog[cur].byte[1],
-				backlog[cur].byte[2], backlog[cur].byte[3],
-				err_str[err]);
+				backlog[cur].addr,
+				backlog[cur].data,
+				err_str[err]
+				);
+		
+		printf("err\n");
 		return 1;
 	}
 }
