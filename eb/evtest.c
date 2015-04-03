@@ -1,5 +1,5 @@
 /* 
- * Parse em-5 events, check event file syntax and pring some statistics.
+ * Parse em-5 raw data files, check the file syntax and optionally print some statistics.
  */
 #include <argp.h>
 #include <stdbool.h>
@@ -8,33 +8,37 @@
 #include <assert.h>
 #include <inttypes.h> //to be shure we are using 32-bit words
 
-const char *argp_program_version = "evstat 1.0";
-const char *argp_program_bug_address = "<sergey-inform@ya.ru>";
+const char *argp_program_version = "evstat 2.0";
+const char *argp_program_bug_address = "\"Sergey Ryzhikov\" <sergey-inform@ya.ru>";
 static char doc[] = "Parse EM-5 events, check event file syntax and pring some statistics.";
 static char args_doc[] = "[FILENAME]";
 static struct argp_option options[] = { 
-	{ "quiet", 'q', 0, 0, "Print only ok/err."},
-	{ "stats", 's', 0, 0, "Print some termpral statistics."},
-	{ "verbose", 'v', 0, 0, "Dump all events."},
+	{ "quiet", 'q', 0, 0, "No output to stderr."},
+	{ "events", 'e', 0, 0, "Print a count of events."},
+	{ "stats", 's', 0, 0, "Print statistics."},
+	{ "dump", 'd', 0, 0, "Dump event times."},
+	{ "verbose", 'v', 0, 0, "Be verbose."},
 	{ 0 } 
 };
 
-struct arguments {
-	bool isStats, isQuiet, isVerbose;
+struct args {
+	bool isStats, isQuiet, isVerbose, isEvents, isDump;
 	char *infile;
 };
 
 static error_t parse_opt(int key, char *arg, struct argp_state *state) {
-	struct arguments *arguments = state->input;
+	struct args *args = state->input;
 	switch (key) {
-		case 'q': arguments->isQuiet = true; break;
-		case 's': arguments->isStats = true; break;
-		case 'v': arguments->isVerbose = true; break;
+		case 'q': args->isQuiet = true; break;
+		case 's': args->isStats = true; break;
+		case 'v': args->isVerbose = true; break;
+		case 'e': args->isEvents = true; break;
+		case 'd': args->isDump = true; break;
 		case ARGP_KEY_ARG: 
 			if (state->arg_num >= 1){
 				argp_usage(state);
 			}
-			arguments->infile = arg;
+			args->infile = arg;
 			break;
 		default: return ARGP_ERR_UNKNOWN;
 	}
@@ -83,6 +87,14 @@ typedef struct {
 	bool opened;
 	unsigned int evt_count;
 	unsigned int ts_first;
+
+/** TODO: spill_stats
+	struct stat{
+		unsigned int wlen_summ;
+		unsigned int max_wlen;
+		unsigned int empty_events;
+	};
+*/
 } spill;
 
 
@@ -97,17 +109,17 @@ typedef struct {
 
 int main(int argc, char *argv[])
 {
-	struct arguments arguments = {0};
+	struct args args = {0};
 	FILE *instream;
 	size_t bytes;
 	enum err_num err;
 
 	assert(sizeof(emword) == 4); // in case of troubles on 64-bit platforms use -m32 compiler option
 
-	argp_parse(&argp, argc, argv, 0, 0, &arguments);
+	argp_parse(&argp, argc, argv, 0, 0, &args);
 
-	if (arguments.infile) {
-		instream = fopen (arguments.infile, "r");
+	if (args.infile) {
+		instream = fopen (args.infile, "r");
 		if (instream == NULL) {
 			err = errno;
 			fprintf(stderr, "Error opening file: %s\n", strerror( err ));
@@ -137,11 +149,21 @@ int main(int argc, char *argv[])
 	spill sp = {0};
 	event evt = {0};
 
+	//print headers
+	if (args.isVerbose && args.isDump) {
+		printf("timestamp\twlen\n");
+	}
+
 	while ((!err && (bytes = fread( &backlog[cur], 1, sizeof(emword), instream) )))
 	{
 		emword wrd = backlog[cur];
 //		printf("-%08X\n", wrd);
 		
+		if (bytes && bytes != 4 /*size of word*/) {
+			err = FILE_LEN_ODD;
+			printf("leftover is %d bytes.\n",bytes);
+		}
+
 		//check is valid
 		if (wrd.whole == 0x0U) {
 			err = ZEROES;
@@ -191,10 +213,13 @@ int main(int argc, char *argv[])
 			
 			if (evt.wlen!= evt.wlen_1f) {
 				err = WRONG_LEN_1F;
-				fprintf(stderr, "len:%d len_1f:%d\n", evt.wlen, evt.wlen_1f);
+				fprintf(stderr, "len_1f:%d != len:%d\n", evt.wlen_1f, evt.wlen);
 				continue;
 			}
 
+			if (args.isDump){
+				printf("%9d\t%4d\n", evt.ts, evt.wlen);
+			}
 			break;
 
 		case 0x1F:
@@ -208,15 +233,16 @@ int main(int argc, char *argv[])
  		wpos++;
 	}
 	
-	if (bytes && bytes != 4/*size of word*/) {
-		err = FILE_LEN_ODD;
-		printf("bytes: %d\n",bytes);
-	}
 
 	///print error
 	if (!err) {
-		//if verbose
+		if(args.isEvents){
+			printf("%s%d\n", args.isVerbose ? "events: ": "", sp.evt_count);
+		}
+
+		if(args.isVerbose){
 			printf("ok\n");
+		}
 		return 0;
 	}
 	else {
@@ -226,7 +252,6 @@ int main(int argc, char *argv[])
 				backlog[cur].data,
 				err_str[err]
 				);
-		
 		printf("err\n");
 		return 1;
 	}
