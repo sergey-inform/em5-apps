@@ -10,13 +10,11 @@
 #include <sys/stat.h>  // fstat
 #include <assert.h>
 
-
 #include "em5.h"
 #include "hptdc.h"
 
-#define PURPOSE "Print EM3 raw data in human readable format."
-
-#define CFG_ALLNUM 31	/* all modules */
+#define PURPOSE "Print a raw miss data in human readable format (for debugging)."
+#define CFG_ALLNUM 0	/* all modules */
 
 const char * USAGE = "[-n num] <filename> \n";
 const char * ARGS = "\n"
@@ -24,77 +22,27 @@ const char * ARGS = "\n"
 "  num:  module number, '31' means all modules (default); \n";
 const char * CONTRIB = "\nWritten by Sergey Ryzhikov, \nsergey.ryzhikov@ihep.ru, 03.2017.\n";
 
-
 /*
  * TODO: 
- *  2. read() if mmap fails
- *  3. пробуем смотреть в процессе набора данных (со старым конфигом).
- *  4. 
+ * - add "skip" parameter
+ * 
  */ 
 
 struct conf {
 	char * filename;
 	int a;
 	unsigned num;
+	uint64_t fskip;
 	} cfg = {
 		.filename = "-",  // stdin by default
 		.num = CFG_ALLNUM,  // CFG_ALLNUM -- all moudles
+		.fskip = 0,	// skip from the beginning 
 	};
-
 
 int parse_opts(int argc, char ** argv, struct conf *);
 void print_opts(struct conf*);
+int nhex(unsigned long val);
 
-int nhex(unsigned long val)
-/** How many hex chars do we need to print val.*/
-{	
-	// TODO: make it better =)
-	if      ( val & 0xF0000000) return 8;
-	else if ( val & 0x0F000000) return 7;
-	else if ( val & 0x00F00000) return 6;
-	else if ( val & 0x000F0000) return 5;
-	else if ( val & 0x0000F000) return 4;
-	else if ( val & 0x00000F00) return 3;
-	else if ( val & 0x000000F0) return 2;
-	else if ( val & 0x0000000F) return 1;
-	return 0;
-}
-
-void snprint_hptdc_word(char * buf, int len, HPTDC_WORD w)
-/**
- * Print given HPTDC_WORD to the buffer in human-readable format.
- */
-{
-	HPTDC_EVENT e = hptdc_unpack(w);
-	
-	switch(e.type)
-	{
-	
-#define pr(format,...) snprintf(buf, len, "%u " format, e.tdc, __VA_ARGS__)	
-	
-	case GRP_HDR:	pr("-- HEAD_MASTER evt: %4u \tbunch: %u", e.eventid, e.bunchid); break;
-	case TDC_HDR:	pr("-- HEAD_SLAVE evt: %4u \tbunch: %u", e.eventid, e.bunchid); break;
-	case GRP_TRL:	pr("-- END_MASTER evt: %4u \tcnt: %u", e.eventid, e.wordcount); break;
-	case TDC_TRL:	pr("-- END_SLAVE evt: %4u \tcnt: %u", e.eventid, e.wordcount); break;
-	case LEADING:	pr("%02u LEAD  ts: %u", e.chan, e.leading); break;
-	case TRAILING:	pr("%02u TRAIL ts: %u", e.chan, e.trailing); break;
-	  //==COMBINED
-	case ERR_FLAG:  pr("ERROR flags: %05X", e.errflags); break;
-	case DEBUG:
-		switch(e.debug_subtype)
-		{
-			case BUNCH_ID: 
-					pr("DEBUG bunch: %u", e.debug_bunchid); break;
-			case L1_OCCUP:
-					pr("DEBUG grp: %u l1_occup: %u", e.gr, e.l1_occupancy); break;
-			case FIFO_OCCUP:
-					pr("DEBUG trig_fifo: %u readout_fifo: %u %s", e.trig_fifo, e.readout_fifo, (e.f)?"FULL":""); break;
-		}
-		break;
-	default:
-			pr("UNKNOWN_TYPE 0x%X, missing emword?", e.type );
-	}
-}
 
 //~ static EMWORD next_emword(FILE *fptr) {
 	//~ 
@@ -112,13 +60,22 @@ void snprint_hptdc_word(char * buf, int len, HPTDC_WORD w)
 	//~ }
 //~ }
 
+struct missstate {
+	enum state {INIT, OK};
+};
 
-void print_em3dump( FILE *fptr, unsigned long wcount /* could be 0 if chardev or fifo */)
+void pprint_dump( FILE *fptr, unsigned num, uint64_t fskip)
+/** Print file dump word by word.
+ */
+{
+	
+}
+
+void print_dump( FILE *fptr, unsigned long wcount /* could be 0 if chardev or fifo */)
 /**
  * Print em3 dump word by word;
  */
 {
-	
 	HPTDC_WORD hptdc_word= 0;
 	unsigned long wi = 0;  // buf index
 	unsigned wcount_nhex = nhex(wcount);  //how many hex digits to print
@@ -207,7 +164,7 @@ void print_em3dump( FILE *fptr, unsigned long wcount /* could be 0 if chardev or
 					continue;
 				}
 				
-				snprint_hptdc_word(prbuf, BUFLEN-1, hptdc_word);
+				//~ snprint_hptdc_word(prbuf, BUFLEN-1, hptdc_word);
 				printf( "%0*lX %08X >> %02u" //nhex, wi, raw
 						" %s \n",
 						wcount_nhex, wi, hptdc_word,
@@ -225,8 +182,6 @@ void print_em3dump( FILE *fptr, unsigned long wcount /* could be 0 if chardev or
 	
 }
 
-
-
 int main( int argc, char ** argv)
 {
 	FILE *fptr;
@@ -235,7 +190,7 @@ int main( int argc, char ** argv)
 	
 	const void *memblock = NULL;
 	uint64_t fsize;
-	mode_t fmode;
+	//~ mode_t fmode;
 	
 	if (parse_opts(argc, argv, &cfg))
 		exit(EXIT_FAILURE);
@@ -247,14 +202,14 @@ int main( int argc, char ** argv)
 		exit(EXIT_FAILURE);
 	}
 	
-	fd = fileno(fptr);
-	fstat(fd, &sb);
-	fsize = sb.st_size;
-	fmode = sb.st_mode;
-	fprintf(stderr, "Size: %llu\n", fsize);
+	//~ fd = fileno(fptr);
+	//~ fstat(fd, &sb);
+	//~ fsize = sb.st_size;
+	//~ fmode = sb.st_mode;
+	//~ fprintf(stderr, "Size: %llu\n", fsize);
 	
-	/// print words
-	print_em3dump(fptr, fsize/sizeof(EMWORD));
+	/// print the file word by word
+	print_dump(fptr, fsize/sizeof(EMWORD));
 	
 	munmap((void*)memblock, fsize);
 	fclose(fptr);
@@ -325,51 +280,19 @@ void print_opts(struct conf * cfg)
 	return;
 }
 
-
-HPTDC_EVENT hptdc_unpack(HPTDC_WORD w)
-{
-	HPTDC_EVENT e = {0};
-	unsigned data = w & 0x00FFffFF; 
-	e.type = (w & 0xF0000000) >> 28;
-	e.tdc  = (w & 0x0F000000) >> 24;
+int nhex(unsigned long val)
+/** How many hex chars do we need to print val.*/
+{	
 	
-	switch(e.type)
-	{
-	case GRP_HDR:
-	case TDC_HDR:
-	case GRP_TRL:
-	case TDC_TRL:
-		e.eventid = (data & 0xFFF000) >>12;
-		e.bunchid = data & 0xFFF;  //same as wordcount
-		break;
-	
-	case LEADING:  //==COMBINED
-	case TRAILING:
-		e.chan = (data & 0xF80000) >>19;
-		e.leading = data & 0x7FFFF; //same as trailings
-		break;
-		
-	case ERR_FLAG:
-		e.errflags = data & 0x7FFF;
-		break;
-		
-	case DEBUG:
-		e.debug_subtype = (data & 0xF00000) >> 20;
-		switch(e.debug_subtype)
-		{
-			case BUNCH_ID:
-				e.debug_bunchid = data & 0xFFF;
-				break;
-			case L1_OCCUP:
-				e.gr = (data & 0x300) >> 8;
-				e.l1_occupancy = (data & 0xFF);
-			case FIFO_OCCUP:
-				e.trig_fifo = (data & 0x1E00) >> 8;
-				e.f = (bool)(data & 0x100);
-				e.readout_fifo = (data & 0xFF);
-		}
-		
-		break;
-	}
-	return e;
+	// TODO: make it better =)
+	// int __builtin_clzll
+	if      ( val & 0xF0000000) return 8;
+	else if ( val & 0x0F000000) return 7;
+	else if ( val & 0x00F00000) return 6;
+	else if ( val & 0x000F0000) return 5;
+	else if ( val & 0x0000F000) return 4;
+	else if ( val & 0x00000F00) return 3;
+	else if ( val & 0x000000F0) return 2;
+	else if ( val & 0x0000000F) return 1;
+	return 0;
 }

@@ -64,8 +64,8 @@ void snprint_hptdc_word(char * buf, int len, HPTDC_WORD w)
 	case TDC_HDR:	pr("-- HEAD_SLAVE evt: %4u \tbunch: %u", e.eventid, e.bunchid); break;
 	case GRP_TRL:	pr("-- END_MASTER evt: %4u \tcnt: %u", e.eventid, e.wordcount); break;
 	case TDC_TRL:	pr("-- END_SLAVE evt: %4u \tcnt: %u", e.eventid, e.wordcount); break;
-	case LEADING:	pr("%02u LEAD  ts: %u", e.chan, e.leading); break;
-	case TRAILING:	pr("%02u TRAIL ts: %u", e.chan, e.trailing); break;
+	case LEADING:	pr("%02u LEAD  ts: %lu", e.chan, e.leading); break;
+	case TRAILING:	pr("%02u TRAIL ts: %lu", e.chan, e.trailing); break;
 	  //==COMBINED
 	case ERR_FLAG:  pr("ERROR flags: %05X", e.errflags); break;
 	case DEBUG:

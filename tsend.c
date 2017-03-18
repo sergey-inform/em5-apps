@@ -9,19 +9,20 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 
-#define DEVICE_FILE "/dev/em5"
 #define PURPOSE "Send all EM5 readout buffer contents via TCP to the server."
-#define CONNECT_TIMEOUT 1
+#define DEVICE_FILE "/dev/em5"
+#define CONNECT_TIMEOUT 1  //sec
 
 const char * USAGE = "<buf size> <host> <port> [-D device] [-n count] [-h] \n";
 const char * ARGS = "\n"
-"  <buf size>: kernel buffer size (in megabytes) \n"
-"  <host>: listening server IP \n"
+"  <buf size>: kernel buffer size in megabytes \n"
+"      (get it with `cat /sys/module/em5_module/parameters/mem`)"
+"  <host>: server IP address \n"
 "  <port>: server port \n"
 "  -D \t default is " DEVICE_FILE "\n"
-"  -n \t repeat transmission <count> times (for debug purpose). \n";
-const char * CONTRIB = "\nWritten by Sergey Ryzhikov, IHEP@Protvino, 11.2014.\n";
-
+"  -n \t repeat transmission <count> times (for debugging). \n"
+"  -h \t display help";
+const char * CONTRIB = "\nWritten by Sergey Ryzhikov <sergey.ryzhikov@ihep.ru>, 11.2014.\n";
 
 struct conf {
 	unsigned long buf_sz;

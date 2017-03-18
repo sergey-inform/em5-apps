@@ -15,4 +15,5 @@ typedef union {
 	};
 } EMWORD;	/* EuroMISS word: addr+data */
 
+
 #endif /* EM5_H*/

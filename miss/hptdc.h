@@ -40,8 +40,8 @@ typedef struct {
 		struct {
 			unsigned char chan :5;
 			union {
-				unsigned leading;  ///:19  LEADING
-				unsigned trailing;  ///:19  TRAILING
+				unsigned long leading;  ///:19  LEADING
+				unsigned long trailing;  ///:19  TRAILING
 				struct {  ///COMBINED
 					unsigned short pair_width :7;	
 					unsigned short pair_leading :12;
