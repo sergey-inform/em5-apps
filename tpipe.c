@@ -25,7 +25,7 @@ const char * CONTRIB = "\nWritten by Sergey Ryzhikov, IHEP@Protvino, 03.2015.\n"
 struct conf {
 	char * hostname;
 	unsigned int port;
-	} cfg = {0};
+	} cfg;
 	
 void print_opts();
 int parse_opts(int argc, char ** argv);
@@ -41,9 +41,6 @@ int main ( int argc, char ** argv)
 		exit(-1);
 		
 	//~ print_opts();
-	
-	//~ printf("ok\n");
-	//~ exit(0);
 		
 	sockfd = _open_socket();
 	if (sockfd < 0) {
@@ -54,14 +51,13 @@ int main ( int argc, char ** argv)
     while(( bytes = fread(buf, sizeof(char), BUFSIZE, stdin) )){
         ret = write(sockfd, buf, bytes);
         if (ret != bytes) {
-			fprintf(stderr, "write err");
+			perror("socket write error");
 			exit(-1);
 		}
     }
 	
 	/// rollup 
 	close(sockfd);
-	
 	return 0;
 }
 
