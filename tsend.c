@@ -2,51 +2,47 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <errno.h>
-#include <string.h> /*memset*/
-
-#include <sys/types.h>
 #include <sys/socket.h>
-#include <netdb.h>
+#include <arpa/inet.h>
+#include <errno.h>
 
 #include <sys/stat.h>
 #include <sys/mman.h>
 
-#define PURPOSE "Mmap EM5 memory buffer and stream the buffer contents via TCP to the server."
+#define PURPOSE "Send all EM5 readout buffer contents at once via TCP to the server.\n" \
+		"Appending data to the buffer and waiting for a new data are not supported."
 #define DEVICE_FILE "/dev/em5"
-#define MMAP_SZ_FILE "/sys/module/em5_module/parameters/mem"
 #define CONNECT_TIMEOUT 1  //sec
 
-const char * USAGE = "<host> <port> [-f filename] [-m mmap_size] [-l loop_count] [-h] \n";
+const char * USAGE = "<buf size> <host> <port> [-D device] [-n count] [-h] \n";
 const char * ARGS = "\n"
+"  <buf size>: kernel buffer size in megabytes \n"
+"      (get it with `cat /sys/module/em5_module/parameters/mem`)"
 "  <host>: server IP address \n"
 "  <port>: server port \n"
-"  -f \t default is " DEVICE_FILE "\n"
-"  -m: mmap buffer size in megabytes \n"
-"      (if not specified, will be detected by reading `"MMAP_SZ_FILE"`)"
-"  -l \t repeat transmission several times (for debugging). \n"
+"  -D \t default is " DEVICE_FILE "\n"
+"  -n \t repeat transmission <count> times (for debugging). \n"
 "  -h \t display help";
 const char * CONTRIB = "\nWritten by Sergey Ryzhikov <sergey.ryzhikov@ihep.ru>, 11.2014.\n";
 
 struct conf {
-	unsigned long mmap_sz;
+	unsigned long buf_sz;
 	char * hostname;
-	char * port;
-	char * filename;
-	unsigned repeat_cnt;
+	unsigned int port;
+	char * device;
+	unsigned int count;
 	} cfg = {
-		.filename = DEVICE_FILE,
-		.repeat_cnt = 0,
+		.device = DEVICE_FILE,
+		.count = 1,
 	};
 	
 void print_opts();
 int parse_opts(int argc, char ** argv);
 int _open_socket(); /* returns: sockfd or -1 on error */
 
-#define PERR(format, ...)	fprintf(stderr, "Error: " format "\n",  ##__VA_ARGS__)
+#define PRERR(format, ...)	fprintf(stderr, "Error: " format "\n",  ##__VA_ARGS__)
 
-
-off_t fsize(int fd) {
+off_t fsize(int fd){
 /** Get data size by seeking to it's end */
     off_t prev, sz;
     prev	= lseek(fd, 0L, SEEK_CUR);
@@ -55,200 +51,162 @@ off_t fsize(int fd) {
     return sz;
 }
 
-off_t fwait(int fd, off_t pos) {
-/** Wait for new data in fd.
-	Returns: a number of new bytes
-	         0 on EOF;
-*/
-	off_t sz;
-	int tmp;
-	lseek(fd, pos, SEEK_SET);
-	sz = read(fd, &tmp, sizeof(tmp))
-	
-    return sz;
-}
-
-unsigned long get_buf_sz(void) {
-/** Get buffer size by reading MMAP_SZ_FILE.
- *  Return 0 on falure.
- */
-	char line[32];
-	unsigned long ret;
-	FILE* file = fopen(MMAP_SZ_FILE, "r");
-	
-	if (!file) {
-		PERR("Can't open %s", MMAP_SZ_FILE);
-        return 0;
-	}
-	
-	if (fgets(line, sizeof(line), file)) {
-		ret = atoi(line);
-    } 
-    else {
-		PERR("Can't read %s", MMAP_SZ_FILE);
-		return 0;
-	} 
-    
-    fclose(file);
-    return ret;
-}
-
-
 int main ( int argc, char ** argv)
 {
 	int sockfd;
 	struct stat sb;
 	int fd;
-	off_t flen;  // file length (memory buffer size in em5 driver)
-	off_t fcount;  // bytes in file ready to be sent
-	off_t scount = 0;  // sent count
+	off_t flen, fcount, n;
 	void * fptr;
-	unsigned repeat_loop;
+	unsigned int ui;
 	
 	if (parse_opts(argc, argv))
-		exit(EXIT_FAILURE);
-	
-	if (cfg.mmap_sz == 0) {
-		cfg.mmap_sz = get_buf_sz(); /* autodetect */
+		exit(-1);
+	print_opts();
 		
-		if (cfg.mmap_sz == 0)
-			exit(EXIT_FAILURE);
-	}
-	
-	//~ print_opts();
-
 	sockfd = _open_socket();
 	if (sockfd < 0) {
 		exit(EXIT_FAILURE);
 	}
 	
-	fd = open(cfg.filename, O_RDONLY);
+	fd = open(cfg.device, O_RDONLY);
 	if (fd == -1) {
-		PERR("open() '%s': %s", cfg.filename, strerror(errno));
+		perror("open");
 		return -1;
 	}
 	
 	if (fstat(fd, &sb) == -1) {
-		PERR("fstat() %s: %s", cfg.filename, strerror(errno));
+		perror("fstat");
 		return 1;
 	}
 	
 	if (!S_ISREG(sb.st_mode) && !S_ISCHR(sb.st_mode) ) {
-		PERR("%s is not a regular or a character file\n", cfg.filename);
+		fprintf(stderr, "%s is not a regular or a character file\n", cfg.device);
 		return 1;
 	}
 	
-	flen = cfg.mmap_sz;
+	flen = cfg.buf_sz;
 	
-	/// Try to mmap a whole file
 	fptr = mmap(NULL, flen, PROT_READ, MAP_SHARED, fd, 0);
 	if (fptr == MAP_FAILED) {
 		perror("mmap");
-		exit(EXIT_FAILURE);
+		return 1;
 	}
 	
-	repeat_loop = cfg.repeat_cnt;
+	/// get data size 
+	fcount = fsize(fd);
+	//~ fcount = flen;
+	//~ fprintf(stderr, "actual data size: %lu\n", fcount);
 	
-	while (repeat_loop-- >= 0) {
-		do {
-			fcount = fsize(fd);
-		
-			n = write( sockfd, fptr, fcount);
-			if (n < 0) {
-				perror("ERROR in write. ");
-				exit(1);
-			}
-			fprintf(stderr,".");
-		} while ( read(fd, &buf, 4)); /* sleep here */
+	for (ui = cfg.count; ui != 0; ui--) {
+		n = write( sockfd, fptr, fcount);
+		//n = send( sockfd, buff, bsize, 0);
+		if (n < 0) {
+			perror("ERROR in write. ");
+			exit(1);
+		}
+		fprintf(stderr,".");
 	}
+	
 	/// rollup 
 	close(sockfd);
+	
+	if (close(fd) == -1) {
+		perror("file close");
+		return 1;
+	}
 	
 	if (munmap(fptr, flen) == -1) {
 		perror("munmap");
 		return 1;
 	}
 	
-	if (close(fd) == -1) {
-		perror("file close");
-		return 1;
-	}
-
 	return 0;
 }
 
 int _open_socket()
 {
-	int err;
-	int sfd;
-	struct addrinfo hints;
-    struct addrinfo *result, *rp;
-	
+	int res;
+	int sockfd;
+	struct sockaddr_in address;
 	struct timeval tv;
 	fd_set fdset;
 	long arg;
 	
-	memset(&hints, 0, sizeof(struct addrinfo));
-	hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
-	hints.ai_socktype = SOCK_STREAM; /* Stream socket */
-	hints.ai_flags = 0;
-	hints.ai_protocol = 0;          /* Any protocol */
-
-	err = getaddrinfo(cfg.hostname, cfg.port, &hints, &result);
-	if (err) {
-		if (err == EAI_SYSTEM)
-			fprintf(stderr, "getaddrinfo: %s\n", strerror(errno));
-		else
-			fprintf(stderr, "%s: %s\n", cfg.hostname, gai_strerror(err));
+	
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd < 0) { 
+		perror("Error creating socket");
+		return -1;
+	} 
+	
+	/// set to non-blocking mode
+	if( (arg = fcntl(sockfd, F_GETFL, NULL)) < 0) { 
+		perror("Error fcntl(..., F_GETFL)"); 
 		return -1;
 	}
-
-	/* getaddrinfo() returns a list of address structures.
-	  Try each address until we successfully connect(2).
-	  If socket(2) (or connect(2)) fails, we (close the socket
-	  and) try the next address. */
-
-	for (rp = result; rp != NULL; rp = rp->ai_next) {
-		sfd = socket(rp->ai_family, rp->ai_socktype,
-				rp->ai_protocol);
-		
-		if (sfd == -1)
-			continue;
-
-		fcntl(sfd, F_SETFL, O_NONBLOCK); /* connect will not block,
-		                                    so using select() later */
-		connect(sfd, rp->ai_addr, rp->ai_addrlen);
-		
-		FD_ZERO(&fdset); 
-		FD_SET(sfd, &fdset);
-		tv.tv_sec = CONNECT_TIMEOUT;  /* socket timeout */
-		tv.tv_usec = 0;
-		
-		if (select(sfd+1, NULL, &fdset, NULL, &tv) == 1) {
-			int so_error;
-			socklen_t len = sizeof so_error;
-			getsockopt(sfd, SOL_SOCKET, SO_ERROR, &so_error, &len);
-
-			if (so_error == 0) {
-				break; /* Success */
-			}
+	arg |= O_NONBLOCK; 
+	if( fcntl(sockfd, F_SETFL, arg) < 0) { 
+		 perror("Error fcntl(..., F_SETFL)"); 
+		 return -1; 
+	}
+	
+	address.sin_family = AF_INET;
+	address.sin_addr.s_addr = inet_addr(cfg.hostname); /* assign the address */
+	address.sin_port = htons(cfg.port); 
+	
+	/// Trying to connect with timeout 
+	res = connect(sockfd, (struct sockaddr *)&address, sizeof(address)); 
+	if (res < 0) {
+		if (errno == EINPROGRESS) {  /// something went wrong
+			do {
+				tv.tv_sec = CONNECT_TIMEOUT;  /* socket timeout */
+				tv.tv_usec = 0;
+				FD_ZERO(&fdset); 
+				FD_SET(sockfd, &fdset);
+				
+				res = select(sockfd+1, NULL, &fdset, NULL, &tv); 
+				if (res < 0 && errno != EINTR) {
+					PRERR("connection failed");
+					return -2;
+				} 
+				else if (res > 0) {
+					int so_error;
+					socklen_t len = sizeof so_error;
+					if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &so_error, &len) < 0) { 
+						PRERR("getsockopt() failed");
+						return -2;
+					}
+					
+					if (so_error) {
+						PRERR("connection delayed");
+						return -2; 
+					}
+					break;
+				}
+				else {  // res == 0
+					PRERR("timeout in select()");
+					return -2;
+				}
+			} while (1);
 		}
 		else {
-			if (errno == EINTR) {
-				fprintf(stderr,"%s: Connection timeout\n", rp->ai_canonname);
-			}
+			perror("Connection error!");
+			exit(0);
 		}
-			
-	   close(sfd);
 	}
-
-	if (rp == NULL) {  /* No address succeeded */
-	   fprintf(stderr, "Could not connect\n");
-	   return(-1);
+	/// set to non-blocking mode again... 
+	if( (arg = fcntl(sockfd, F_GETFL, NULL)) < 0) { 
+		 perror("Error2 fcntl(..., F_GETFL)"); 
+		 exit(0); 
+	} 
+	arg &= (~O_NONBLOCK); 
+	if( fcntl(sockfd, F_SETFL, arg) < 0) { 
+		 perror("Error2 fcntl(..., F_SETFL)"); 
+		 exit(0); 
 	}
-
-	freeaddrinfo(result);
-	return sfd;
+		
+	return sockfd;
 }
 
 void print_opts()
@@ -256,14 +214,14 @@ void print_opts()
 	fprintf(stderr, "conf:\n"
 		"buf size: %lu \n"
 		"hostname: %s \n"
-		"port: %s \n"
-		"device file: %s \n"
+		"port: %u \n"
+		"device: %s \n"
 		"count: %d \n",
-		cfg.mmap_sz,
+		cfg.buf_sz,
 		cfg.hostname,
 		cfg.port,
-		cfg.filename,
-		cfg.repeat_cnt
+		cfg.device,
+		cfg.count
 		);
 	return;
 }
@@ -273,19 +231,16 @@ int parse_opts (int argc, char ** argv)
 	int opt;
 	opterr = 1; /// 1 is to print error messages
 	
-	while ((opt = getopt(argc, argv, "f:m:l:h")) != -1) {
+	while ((opt = getopt(argc, argv, "D:n:h")) != -1) {
 		switch (opt)
 		{
-			case 'l': 
-				cfg.repeat_cnt = atoi(optarg);
+				
+			case 'n': 
+				cfg.count = atoi(optarg);
 				break;
 				
-			case 'm': 
-				cfg.mmap_sz = 1024 * 1024 * atoi(optarg);
-				break;
-				
-			case 'f':
-				cfg.filename = optarg;
+			case 'D':
+				cfg.device = optarg;
 				break;
 			
 			case 'h': ///help
@@ -299,14 +254,15 @@ int parse_opts (int argc, char ** argv)
 		}
 	}
 	
-	if (argc - optind != 2) {
-		fprintf(stderr, "\nWas waiting for a two non-optional arguments!\n\n");
+	if (argc - optind != 3) {
+		fprintf(stderr, "\nWas waiting for a three non-optional arguments!\n\n");
 		fprintf(stderr, "Usage: %s %s", argv[0], USAGE);
 		exit(EXIT_FAILURE);
 	}
 	
-	cfg.hostname = argv[optind];
-	cfg.port = argv[++optind];
+	cfg.buf_sz = 1024 * 1024 * atoi(argv[optind]);
+	cfg.hostname = argv[++optind];
+	cfg.port = atoi(argv[++optind]);
 		
 	return 0;
 }
