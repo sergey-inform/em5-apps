@@ -9,7 +9,8 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 
-#define PURPOSE "Send all EM5 readout buffer contents via TCP to the server."
+#define PURPOSE "Send all EM5 readout buffer contents at once via TCP to the server.\n" \
+		"Appending data to the buffer and waiting for a new data are not supported."
 #define DEVICE_FILE "/dev/em5"
 #define CONNECT_TIMEOUT 1  //sec
 
@@ -50,11 +51,6 @@ off_t fsize(int fd){
     return sz;
 }
 
-//~ unsigned long get_buf_sz(void) {
-	//~ 
-	//~ 
-//~ }
-
 int main ( int argc, char ** argv)
 {
 	int sockfd;
@@ -66,7 +62,7 @@ int main ( int argc, char ** argv)
 	
 	if (parse_opts(argc, argv))
 		exit(-1);
-	//~ print_opts/();
+	print_opts();
 		
 	sockfd = _open_socket();
 	if (sockfd < 0) {
@@ -97,7 +93,10 @@ int main ( int argc, char ** argv)
 		return 1;
 	}
 	
+	/// get data size 
 	fcount = fsize(fd);
+	//~ fcount = flen;
+	//~ fprintf(stderr, "actual data size: %lu\n", fcount);
 	
 	for (ui = cfg.count; ui != 0; ui--) {
 		n = write( sockfd, fptr, fcount);
@@ -232,12 +231,9 @@ int parse_opts (int argc, char ** argv)
 	int opt;
 	opterr = 1; /// 1 is to print error messages
 	
-	while ((opt = getopt(argc, argv, "p:D:n:h")) != -1) {
+	while ((opt = getopt(argc, argv, "D:n:h")) != -1) {
 		switch (opt)
 		{
-			case 'p': 
-				cfg.port = atoi(optarg);
-				break;
 				
 			case 'n': 
 				cfg.count = atoi(optarg);
@@ -245,6 +241,7 @@ int parse_opts (int argc, char ** argv)
 				
 			case 'D':
 				cfg.device = optarg;
+				break;
 			
 			case 'h': ///help
 				fprintf(stderr, PURPOSE "\n""usage: \n%s %s %s %s",
