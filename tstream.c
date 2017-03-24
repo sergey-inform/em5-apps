@@ -14,24 +14,24 @@
 #include <sys/mman.h>
 
 #define PURPOSE "Mmap EM5 memory buffer and stream the buffer contents via TCP to the server.\n" \
-	"Waiting for data append until read() returns EOF.\n"
+	"Useing read() to wait for appended data (until read() returns EOF).\n"
 #define DEVICE_FILE "/dev/em5"
 #define MMAP_SZ_FILE "/sys/module/em5_module/parameters/mem"
 #define CONNECT_TIMEOUT 1  // sec
 
-const char * USAGE = "<host> <port> [-f filename] [-m mmap_size] [-l loop_count] [-h] \n";
+const char * USAGE = "<host> <port> [-f filename] [-m mmap_size] [-x loop_count] [-h] \n";
 const char * ARGS = "\n"
 "  <host>: server IP address or hostname \n"
 "  <port>: server port or service name\n"
 "  -f \t device file, default is " DEVICE_FILE "\n"
 "  -m: memory buffer size in megabytes \n"
 "      (if not specified, will be detected by reading `"MMAP_SZ_FILE"`)"
-"  -l: \t repeat several times (for debugging). \n"
+"  -x: \t send buffer contents several times (for debugging). \n"
 "  -h \t display help";
 const char * CONTRIB = "\nWritten by Sergey Ryzhikov <sergey.ryzhikov@ihep.ru>, 11.2014.\n";
 
 struct conf {
-	unsigned long mmap_sz;
+	ssize_t mmap_sz;
 	char * hostname;
 	char * port;
 	char * filename;
@@ -56,6 +56,7 @@ off_t _fsize(int fd) {
     lseek(fd, prev, SEEK_SET);
     return sz;
 }
+
 
 int get_buf_sz(void) {
 /** Get buffer size by reading MMAP_SZ_FILE.
@@ -83,19 +84,42 @@ int get_buf_sz(void) {
 }
 
 
+int stream_file_mmap(int fd, int sockfd, void* fptr, ssize_t fsz) {
+/** Write mmapped file contents to the socket.
+ *  read() used to detect "no more data".
+ **/
+	off_t fd_sz;
+	int n;
+	int tmp;
+	unsigned count = 0;  // a number of bytes written
+	char *p = (char*) fptr;
+
+
+	do {
+		fd_sz = _fsize(fd);  // data size
+		n = write( sockfd, p , (fd_sz - count) );
+		if (n < 0) { 
+			perror("Error in write to socket.");
+			return errno;
+		}
+		count += n;
+		fprintf(stderr,".");
+		
+		lseek(fd, count, SEEK_SET);  // notify the driver
+		
+	} while ( read(fd, &tmp, sizeof(tmp) )); /* sleeps here */
+	
+	return 0;
+}
+
 int main ( int argc, char ** argv)
 {
 	int sockfd;
 	struct stat sb;
 	int fd;
-	int tmp;
-	off_t flen;  // file length (memory buffer size in em5 driver)
-	off_t fcount;  // bytes in file ready to be sent
-	off_t scount;  // sent count
-	ptrdiff_t ncount;  // new bytes count
-	int n;
 	void * fptr;
-	unsigned repeat_loop;
+	unsigned long fsz;
+	unsigned repeat_cnt;
 	
 	if (parse_opts(argc, argv))
 		exit(EXIT_FAILURE);
@@ -106,7 +130,6 @@ int main ( int argc, char ** argv)
 		if (cfg.mmap_sz == 0)
 			exit(EXIT_FAILURE);
 	}
-	
 	//~ print_opts();
 
 	sockfd = _open_socket();
@@ -120,50 +143,34 @@ int main ( int argc, char ** argv)
 		return -1;
 	}
 	
+	/// check the file
 	if (fstat(fd, &sb) == -1) {
 		PERR("fstat() %s: %s", cfg.filename, strerror(errno));
 		return 1;
 	}
-	
 	if (!S_ISREG(sb.st_mode) && !S_ISCHR(sb.st_mode) ) {
 		PERR("%s is not a regular or a character file\n", cfg.filename);
 		return 1;
 	}
 	
-	flen = cfg.mmap_sz;
-	
 	/// Try to mmap a whole file
-	fptr = mmap(NULL, flen, PROT_READ, MAP_SHARED, fd, 0);
+	fsz = cfg.mmap_sz;
+	fptr = mmap(NULL, fsz, PROT_READ, MAP_SHARED, fd, 0);
 	if (fptr == MAP_FAILED) {
 		perror("mmap");
 		exit(EXIT_FAILURE);
 	}
 	
-	repeat_loop = cfg.repeat_cnt;
-	
+	repeat_cnt = cfg.repeat_cnt;
 	do { 
-		scount = 0;
-		do {
-			fcount = _fsize(fd);
-			fcount = flen;
-			ncount = fcount - scount;
-		
-			n = write( sockfd, (char*)fptr + scount, ncount);
-			if (n < 0) {
-				perror("ERROR in write. ");
-				exit(1);
-			}
-			scount += ncount;
-			fprintf(stderr,".");
-			lseek(fd, scount, SEEK_SET);
-		
-		} while ( read(fd, &tmp, sizeof(tmp) ) && scount < flen); /* sleep here */
-		
-	} while (repeat_loop--)
+		if ( stream_file_mmap(fd, sockfd, fptr, fsz)) 
+			break;
+	} while (repeat_cnt--);
+	
 	/// rollup 
 	close(sockfd);
 	
-	if (munmap(fptr, flen) == -1) {
+	if (munmap(fptr, fsz) == -1) {
 		perror("munmap");
 		return 1;
 	}
@@ -252,7 +259,7 @@ int _open_socket()
 void print_opts()
 {
 	fprintf(stderr, "conf:\n"
-		"buf size: %lu \n"
+		"buf size: %zu \n"
 		"hostname: %s \n"
 		"port: %s \n"
 		"device file: %s \n"
@@ -271,10 +278,10 @@ int parse_opts (int argc, char ** argv)
 	int opt;
 	opterr = 1; /// 1 is to print error messages
 	
-	while ((opt = getopt(argc, argv, "f:m:l:h")) != -1) {
+	while ((opt = getopt(argc, argv, "hf:m:x:")) != -1) {
 		switch (opt)
 		{
-			case 'l': 
+			case 'x': 
 				cfg.repeat_cnt = atoi(optarg);
 				break;
 				
