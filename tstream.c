@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <string.h> /*memset*/
 #include <stddef.h>
+#include <assert.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -25,13 +26,13 @@ const char * ARGS = "\n"
 "  <port>: server port or service name\n"
 "  -f \t device file, default is " DEVICE_FILE "\n"
 "  -m: memory buffer size in megabytes \n"
-"      (if not specified, will be detected by reading `"MMAP_SZ_FILE"`)"
+"      (if not specified, will be detected by reading `"MMAP_SZ_FILE"`)\n"
 "  -x: \t send buffer contents several times (for debugging). \n"
-"  -h \t display help";
-const char * CONTRIB = "\nWritten by Sergey Ryzhikov <sergey.ryzhikov@ihep.ru>, 11.2014.\n";
+"  -h \t display help\n";
+const char * CONTRIB = "\nWritten by Sergey Ryzhikov <sergey.ryzhikov@ihep.ru>, 03.2017.\n";
 
 struct conf {
-	ssize_t mmap_sz;
+	size_t mmap_sz;
 	char * hostname;
 	char * port;
 	char * filename;
@@ -84,30 +85,40 @@ int get_buf_sz(void) {
 }
 
 
-int stream_file_mmap(int fd, int sockfd, void* fptr, ssize_t fsz) {
+int stream_file_mmap(int fd, int sockfd, void* fptr, size_t fsz) {
 /** Write mmapped file contents to the socket.
  *  read() used to detect "no more data".
  **/
 	off_t fd_sz;
 	int n;
 	int tmp;
-	unsigned count = 0;  // a number of bytes written
+	size_t count = 0;  // a number of bytes written
 	char *p = (char*) fptr;
 
 
 	do {
 		fd_sz = _fsize(fd);  // data size
-		n = write( sockfd, p , (fd_sz - count) );
+		if (fd_sz == 0)
+			break;
+
+		assert(fd_sz <= (off_t)fsz);
+		
+		n = write( sockfd, p, (fd_sz - count) );
 		if (n < 0) { 
+			if (errno == EAGAIN) 
+				continue; 
+				
 			perror("Error in write to socket.");
+			fprintf(stderr, "errno %d \n", errno);
 			return errno;
 		}
 		count += n;
-		fprintf(stderr,".");
-		
 		lseek(fd, count, SEEK_SET);  // notify the driver
+		fprintf(stderr, ".");
 		
-	} while ( read(fd, &tmp, sizeof(tmp) )); /* sleeps here */
+	} while ( read(fd, &tmp, sizeof(tmp) ) && count < fsz); /* sleeps here */
+	
+	fprintf(stdout,"%u\n", count);
 	
 	return 0;
 }
@@ -117,6 +128,7 @@ int main ( int argc, char ** argv)
 	int sockfd;
 	struct stat sb;
 	int fd;
+	int ret;
 	void * fptr;
 	unsigned long fsz;
 	unsigned repeat_cnt;
@@ -163,8 +175,11 @@ int main ( int argc, char ** argv)
 	
 	repeat_cnt = cfg.repeat_cnt;
 	do { 
-		if ( stream_file_mmap(fd, sockfd, fptr, fsz)) 
+		ret = stream_file_mmap(fd, sockfd, fptr, fsz);
+		if (ret) {
+			printf("%s\n", strerror(ret));
 			break;
+		}
 	} while (repeat_cnt--);
 	
 	/// rollup 
