@@ -15,7 +15,7 @@
 #include <sys/mman.h>
 
 #define PURPOSE "Mmap EM5 memory buffer and stream the buffer contents via TCP to the server.\n" \
-	"Useing read() to wait for appended data (until read() returns EOF).\n"
+	"blocking read() is used to wait for appended data (until read() returns EOF).\n"
 #define DEVICE_FILE "/dev/em5"
 #define MMAP_SZ_FILE "/sys/module/em5_module/parameters/mem"
 #define CONNECT_TIMEOUT 1  // sec
