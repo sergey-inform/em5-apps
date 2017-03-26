@@ -181,7 +181,7 @@ int parse_opts (int argc, char ** argv)
 	}
 	
 	if (argc - optind != ARGN) {
-		fprintf(stderr, "\nWas waiting for a three non-optional arguments!\n\n");
+		fprintf(stderr, "\nWas waiting for %d non-optional arguments!\n\n", ARGN);
 		fprintf(stderr, "Usage: %s %s", argv[0], USAGE);
 		exit(EXIT_FAILURE);
 	}
