@@ -99,30 +99,30 @@ int parse_opts (int argc, char ** argv, struct conf * cfg)
 	while ((opt = getopt(argc, argv, "hft:")) != -1) {
 		switch (opt)
 		{
-			case 'f': 
-				cfg->f = true;
-				break;
-				
-			case 't':
-				cfg->t = atoi(optarg);
-				if (cfg->t < 0) {
-					fprintf(stderr,
-							"Err: t parameter can't be less then 0, "
-							"but '%d' given. \n",
-							cfg->t
-							);
-					exit(EXIT_FAILURE);
-				}
-				break;
-				
-			case 'h':  ///help
-				fprintf(stderr, PURPOSE "\n""usage: \n%s %s %s %s",
-						argv[0], USAGE, ARGS, CONTRIB);
-				exit(0);
-				
-			default:  /// '?'
-				fprintf(stderr, "%s %s", argv[0], USAGE);
+		case 'f': 
+			cfg->f = true;
+			break;
+			
+		case 't':
+			cfg->t = atoi(optarg);
+			if (cfg->t < 0) {
+				fprintf(stderr,
+						"Err: t parameter can't be less then 0, "
+						"but '%d' given. \n",
+						cfg->t
+						);
 				exit(EXIT_FAILURE);
+			}
+			break;
+			
+		case 'h':  ///help
+			fprintf(stderr, PURPOSE "\n""usage: \n%s %s %s %s",
+					argv[0], USAGE, ARGS, CONTRIB);
+			exit(0);
+			
+		default:  /// '?'
+			fprintf(stderr, "%s %s", argv[0], USAGE);
+			exit(EXIT_FAILURE);
 		}
 	}
 	
