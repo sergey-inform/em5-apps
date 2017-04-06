@@ -11,63 +11,73 @@
 #include "libem5.h"
 
 #define PURPOSE "EuroMISS tools."
-#define DEVICE_FILE "/dev/em5"
-#define EXECUTABLE "em5toolbox"
+#define DEVICE_FILENAME "/dev/em5"
+#define EXECNAME "em5toolbox"
 
-const char * USAGE = "[<command>] [-f devfile] [-r num] [-l] [-i usec] [-h]";
+const char * USAGE = "[<command>] [-f filename] [-r num] [-l] [-i usec] [-h]";
 const char * ARGS = ""
 "  <command>: you must specify command directly  \n"
-"             or make descriptive symlink to this executable. \n"
-"             Example: `ln -s /bin/"EXECUTABLE" /bin/pchi` \n"
-"  -f:   device file, default is '" DEVICE_FILE "'\n"
+"             or make descriptive symlink to this EXECNAME. \n"
+"             Example: `ln -s /bin/"EXECNAME" /bin/pchi` \n"
+"  -f:   device file, default is '" DEVICE_FILENAME "'\n"
 "  -l    repeat infinitely \n"
 "  -r:   repeat several times \n"
-"  -i:   minimum interval between repetitions (microseconds) \n"
+"  -i:   minimum repeat_interval between repetitions (microseconds) \n"
 "  -h    display this help\n";
 const char * CONTRIB = "Written by Sergey Ryzhikov <sergey.ryzhikov@ihep.ru>, 03.2017.";
 
 
+#define len(a)  (sizeof(a)/sizeof(a[0]))
+
 struct conf {
-	char * devfile;
-	char * whoami;  // executable name
-	unsigned repeat_cnt;  // -1 is infinitely
-	unsigned interval;
+	char * filename;  // device file
+	char * cmd;  // if not EXECNAME
+	unsigned repeat_cnt;  // -1 means infinitely
+	unsigned repeat_interval;
 	bool showhelp;
+	int (*handler)(int argc, char ** argv);
 	} cfg = {  
 		/// reasonable defaults
-		.devfile = DEVICE_FILE,
+		.filename = DEVICE_FILENAME,
 		.repeat_cnt = 0,
-		.interval = 0,
-		.showhelp = 0,
+		.repeat_interval = 0,
+		.showhelp = false,
 	};
-	
-struct subcommand  {
-	const char * name;
+
+int pchi_main(int argc, char ** argv) ;
+
+int test(int argc, char ** argv) {
+	printf("test %d %s\n", argc, argv[0]);
+	return 0;
+}
+
+struct command  {
+	const char * str;
 	int (*func)(int argc, char ** argv);
 };
 
-struct subcommand * commands[] = {
+static struct command commands[] = {
+	{"pchi", pchi_main},
 	{"hehe", test},
-	{NULL}
+	{"bebe", test}
 };
 
-int test(int argc, char ** argv) {
-	printf("test\n");
-}
+
 	
 int parse_opts (int argc, char ** argv, unsigned * optind);
 
 int main(int argc, char ** argv) {
 	
-	struct em5ctl * dev;
+	struct em5dev * dev;
 	unsigned optind;
 	
 	if (parse_opts(argc, argv, &optind))
 		exit(EXIT_FAILURE);
 
-	printf("%s\n", cfg.whoami);
+	printf("%s\n", cfg.cmd);
 	
 	dev = libem5_init("/dev/zero");
+	cfg.handler(argc-optind,(char**)argv[optind]);
 	
 	return 0;
 }
@@ -82,30 +92,41 @@ int parse_opts (int argc, char ** argv, unsigned * retoptind)
  *  Returns 0 on success.
  */
 {
-	
+	int i;
 	int opt;
-	char * subcommand = NULL;  // command to execute
+	char * cmd = NULL;  // command to execute
 	opterr = 1; /// 1 is to print error messages
 	
-	if ((cfg.whoami = strrchr(argv[0], '/')))  // basename
-		cfg.whoami++;
+	if ((cfg.cmd = strrchr(argv[0], '/')))  // basename
+		cfg.cmd++;
 	else
-		cfg.whoami = argv[0];
+		cfg.cmd = argv[0];
 	
-	/// guess subcommand
-	if (strcmp(cfg.whoami, EXECUTABLE)) {  // not default executable name
-		subcommand = cfg.whoami;
+	/// guess cmd
+	if (strcmp(cfg.cmd, EXECNAME)) {  // not default: hard- or symlink
+		cmd = cfg.cmd;
 	}
 	else {
-		/// subcommand is the first argument
-		if (argc < 2) {
-			fprintf(stderr, "%s %s\n", cfg.whoami, USAGE);
-				exit(EXIT_FAILURE);
+		/// cmd is the first argument
+		if (argc < 2) {  // no first argument given
+			fprintf(stderr, "%s %s\n", cfg.cmd, USAGE);
+			exit(EXIT_FAILURE);
 		}
-		subcommand = argv[1];
+		cmd = argv[1];
 	}
 	
-	//TODO: check subcommand is valid
+	for(i = len(commands)-1; i>=0; i--) {
+		fprintf(stderr, "i=%d %s\n", i,commands[i].str);
+		if (!strcasecmp(commands[i].str, cmd)) { //equal
+			cfg.handler = commands[i].func;
+			break;
+		}
+	}
+	
+	if (i == -1) {
+		fprintf(stderr,"Err: unknown command '%s'\n", cmd);
+		return -EINVAL;
+	}
 	
 	/// global options
 	while ((opt = getopt(argc, argv, "hlf:r:i:")) != -1) {
@@ -120,16 +141,16 @@ int parse_opts (int argc, char ** argv, unsigned * retoptind)
 				break;
 			
 			case 'i':
-				cfg.interval = (unsigned)atoi(optarg);
+				cfg.repeat_interval = (unsigned)atoi(optarg);
 				break;
 				
 			case 'f':
-				cfg.devfile = optarg;
+				cfg.filename = optarg;
 				break;
 			
 			case 'h': /// Print help
-				if (subcommand) {
-					/// Show subcommand usage info
+				if (cmd) {
+					/// Show cmd usage info
 					cfg.showhelp = true;
 				}
 				else {
@@ -141,7 +162,7 @@ int parse_opts (int argc, char ** argv, unsigned * retoptind)
 				break;
 				
 			default: /// '?'
-				fprintf(stderr, "%s %s \n", cfg.whoami, USAGE);
+				fprintf(stderr, "%s %s \n", cfg.cmd, USAGE);
 				exit(EXIT_FAILURE);
 		}
 	}
@@ -155,7 +176,7 @@ int parse_opts (int argc, char ** argv, unsigned * retoptind)
 }
 
 /* TODO:
- * subcommands
+ * cmds
  * command handlers
  * call library functions in each handler
  * init device correctly

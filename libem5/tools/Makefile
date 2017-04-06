@@ -16,7 +16,7 @@ $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $(TARGET) $(OBJS) $(LDFLAGS) $(LDLIBS) 
 
 .c.o:
-	$(CC) $(CFLAGS) $(INCLUDES) -c $<  -o $@
+	$(CC) $(CFLAGS) $(INCLUDES) -c $<  -o $@  -Wl,-e$@
 
 arm: ARCH = arm
 arm: CC=/home/user/toolchain/arm-linux-gcc

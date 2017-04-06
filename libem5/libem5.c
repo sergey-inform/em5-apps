@@ -24,7 +24,7 @@
 //~ static int readout_flush(void);
 static int test(void);
 
-static struct em5ctl ctl = { 
+static struct em5dev ctl = { 
 	.test	= test,
 };
 
@@ -51,7 +51,7 @@ static int test (void)
 
 
 
-struct em5ctl * libem5_init( const char * filename)
+struct em5dev * libem5_init( const char * filename)
 {
 	if (filename == NULL) {
 		filename = DEFAULT_FILENAME;
