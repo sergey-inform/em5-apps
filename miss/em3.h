@@ -1,13 +1,13 @@
 /**
  * CERN HPTDC chip data format.
  */
-#ifndef HPTDC_H
-#define HPTDC_H
+#ifndef EM3_H
+#define EM3_H
 
 #include <inttypes.h>
 #include <stdbool.h>
 
-enum _HPTDC_TYPE_EVENT {
+enum HPTDC_EVENT_TYPE {
 	GRP_HDR,
 	GRP_TRL,
 	TDC_HDR,
@@ -18,7 +18,7 @@ enum _HPTDC_TYPE_EVENT {
 	DEBUG,
 	};
 	
-enum _HPTDC_SUBTYPE_DEBUG {
+enum HPTDC_DEBUG_SUBTYPE {
 	BUNCH_ID,
 	L1_OCCUP,
 	FIFO_OCCUP,
@@ -27,7 +27,7 @@ enum _HPTDC_SUBTYPE_DEBUG {
 typedef uint32_t HPTDC_WORD;
 
 typedef struct {
-	enum _HPTDC_TYPE_EVENT type :4; 
+	enum HPTDC_EVENT_TYPE type :4; 
 	unsigned char tdc :4;
 	union {
 		struct {
@@ -52,7 +52,7 @@ typedef struct {
 			unsigned errflags :15;
 		};
 		struct {  ///DEBUG
-			enum _HPTDC_SUBTYPE_DEBUG debug_subtype :4;
+			enum HPTDC_DEBUG_SUBTYPE debug_subtype :4;
 			union {
 				struct {
 					unsigned short debug_bunchid :12;
@@ -71,6 +71,6 @@ typedef struct {
 	};
 } HPTDC_EVENT;
 
-HPTDC_EVENT hptdc_unpack(HPTDC_WORD);
+int hptdc_unpack(HPTDC_WORD, HPTDC_EVENT*);
 
-#endif /* HPTDC_H */
+#endif /* EM3_H */
