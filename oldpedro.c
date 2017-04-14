@@ -230,6 +230,11 @@ void parse_options(int argc, char **argv) {
         case 'x':
 			cfg.raw_output = true;
 			break;
+			
+		case 'h':
+			fprintf(stderr, "USAGE: %s [-x] [-t threshold]\n ",
+					argv[0]);
+			exit(0);
 		
 		case '?':
 		default:
