@@ -5,7 +5,7 @@ LDFLAGS = -Wl,-rpath,. # add current dir to library search path
 INSTALLDIR = /home/user/nfsroot/root/
 
 SRCS=$(wildcard *.c)
-PROGS=missdump
+PROGS=em3dec
 
 all: clean $(PROGS)
 
