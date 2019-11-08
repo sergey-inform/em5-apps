@@ -14,22 +14,23 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 
-#define PURPOSE "Mmap EM5 memory buffer and stream the buffer contents via TCP to the server.\n" \
+#define PURPOSE "Mmap a file and stream it's contents via TCP.\n" \
 	"blocking read() is used to wait for appended data (until read() returns EOF).\n"
 #define DEVICE_FILE "/dev/em5"
 #define MMAP_SZ_FILE "/sys/module/em5_module/parameters/mem"
 #define CONNECT_TIMEOUT 1  // sec
 
-const char * USAGE = "<host> <port> [-f filename] [-m mmap_size] [-x loop_count] [-h] \n";
-const char * ARGS = "\n"
+const char * USAGE = "<host> <port> [-f filename] [-m mmap_size] [-x loop_count] [-h] ";
+const char * ARGS = ""
 "  <host>: server IP address or hostname \n"
 "  <port>: server port or service name\n"
 "  -f \t device file, default is " DEVICE_FILE "\n"
 "  -m: memory buffer size in megabytes \n"
-"      (if not specified, will be detected by reading `"MMAP_SZ_FILE"`)\n"
-"  -x: \t send buffer contents several times (for debugging). \n"
+"      (can be determined by reading `"MMAP_SZ_FILE"`)\n"
+"  -x: \t send several times (useful for debugging). \n"
 "  -h \t display help\n";
-const char * CONTRIB = "\nWritten by Sergey Ryzhikov <sergey.ryzhikov@ihep.ru>, 03.2017.\n";
+const char * CONTRIB = "Written by Sergey Ryzhikov <sergey.ryzhikov@ihep.ru>, 03.2017.";
+const char * VERSION = "v19.11";
 
 struct conf {
 	size_t mmap_sz;
@@ -101,7 +102,7 @@ int stream_file_mmap(int fd, int sockfd, void* fptr, size_t fsz) {
 		if (fd_sz == 0)
 			break;
 
-		assert(fd_sz <= (off_t)fsz);
+		//assert(fd_sz <= (off_t)fsz);
 		
 		n = write( sockfd, p, (fd_sz - count) );
 		if (n < 0) { 
@@ -138,7 +139,7 @@ int main ( int argc, char ** argv)
 	
 	if (cfg.mmap_sz == 0) {
 		cfg.mmap_sz = get_buf_sz(); /* autodetect */
-		
+		// TODO: autodetect by 	
 		if (cfg.mmap_sz == 0)
 			exit(EXIT_FAILURE);
 	}
@@ -309,8 +310,8 @@ int parse_opts (int argc, char ** argv)
 				break;
 			
 			case 'h': ///help
-				fprintf(stderr, PURPOSE "\n""usage: \n%s %s %s %s",
-						argv[0], USAGE, ARGS, CONTRIB);
+				fprintf(stderr, PURPOSE "\n""usage: \n%s\n%s\n%s\n%s\n%s\n",
+						argv[0], USAGE, ARGS, CONTRIB, VERSION);
 				exit(0);
 				
 			default: /// '?'
