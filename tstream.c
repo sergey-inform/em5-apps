@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -20,11 +21,12 @@
 #define MMAP_SZ_FILE "/sys/module/em5_module/parameters/mem"
 #define CONNECT_TIMEOUT 1  // sec
 
-const char * USAGE = "<host> <port> [-f filename] [-m mmap_size] [-x loop_count] [-h] ";
+const char * USAGE = "<host> <port> [-p] [-f filename] [-m mmap_size] [-x loop_count] [-h] ";
 const char * ARGS = ""
 "  <host>: server IP address or hostname \n"
 "  <port>: server port or service name\n"
 "  -f \t device file, default is " DEVICE_FILE "\n"
+"  -p \t print progress \n"
 "  -m: memory buffer size in megabytes \n"
 "      (can be determined by reading `"MMAP_SZ_FILE"`)\n"
 "  -x: \t send several times (useful for debugging). \n"
@@ -38,6 +40,7 @@ struct conf {
 	char * port;
 	char * filename;
 	unsigned repeat_cnt;
+	bool progress;
 	} cfg = {
 		.filename = DEVICE_FILE,
 		.repeat_cnt = 0,
@@ -102,7 +105,7 @@ int stream_file_mmap(int fd, int sockfd, void* fptr, size_t fsz) {
 		if (fd_sz == 0)
 			break;
 
-		//assert(fd_sz <= (off_t)fsz);
+		assert(fd_sz <= (off_t)fsz);
 		
 		n = write( sockfd, p, (fd_sz - count) );
 		if (n < 0) { 
@@ -115,11 +118,14 @@ int stream_file_mmap(int fd, int sockfd, void* fptr, size_t fsz) {
 		}
 		count += n;
 		lseek(fd, count, SEEK_SET);  // notify the driver
-		fprintf(stderr, ".");
+	
+		if(cfg.progress){
+			fprintf(stderr, "\r%.0f%% ",  100.0 * count / fsz );  //print progress
+		}
 		
 	} while ( read(fd, &tmp, sizeof(tmp) ) && count < fsz); /* sleeps here */
 	
-	fprintf(stdout,"%u\n", count);
+	fprintf(stdout,"%u  ", count);
 	
 	return 0;
 }
@@ -139,11 +145,10 @@ int main ( int argc, char ** argv)
 	
 	if (cfg.mmap_sz == 0) {
 		cfg.mmap_sz = get_buf_sz(); /* autodetect */
-		// TODO: autodetect by 	
 		if (cfg.mmap_sz == 0)
 			exit(EXIT_FAILURE);
 	}
-	//~ print_opts();
+	//print_opts();
 
 	sockfd = _open_socket();
 	if (sockfd < 0) {
@@ -181,6 +186,7 @@ int main ( int argc, char ** argv)
 			printf("%s\n", strerror(ret));
 			break;
 		}
+
 	} while (repeat_cnt--);
 	
 	/// rollup 
@@ -279,12 +285,14 @@ void print_opts()
 		"hostname: %s \n"
 		"port: %s \n"
 		"device file: %s \n"
-		"count: %d \n",
-		cfg.mmap_sz,
-		cfg.hostname,
-		cfg.port,
-		cfg.filename,
-		cfg.repeat_cnt
+		"count: %d \n"
+		"progress: %s \n"
+		,cfg.mmap_sz
+		,cfg.hostname
+		,cfg.port
+		,cfg.filename
+		,cfg.repeat_cnt
+		,cfg.progress ? "yes" : "no"
 		);
 	return;
 }
@@ -294,7 +302,7 @@ int parse_opts (int argc, char ** argv)
 	int opt;
 	opterr = 1; /// 1 is to print error messages
 	
-	while ((opt = getopt(argc, argv, "hf:m:x:")) != -1) {
+	while ((opt = getopt(argc, argv, "hpf:m:x:")) != -1) {
 		switch (opt)
 		{
 			case 'x': 
@@ -307,6 +315,10 @@ int parse_opts (int argc, char ** argv)
 				
 			case 'f':
 				cfg.filename = optarg;
+				break;
+
+			case 'p':
+				cfg.progress = true;
 				break;
 			
 			case 'h': ///help
