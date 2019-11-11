@@ -102,7 +102,7 @@ int stream_file_mmap(int fd, int sockfd, void* fptr, size_t fsz) {
 
 	do {
 		fd_sz = _fsize(fd);  // data size
-		if (fd_sz == 0)
+		if (fd_sz == 0 && count != 0) // no more data
 			break;
 
 		assert(fd_sz <= (off_t)fsz);
@@ -119,13 +119,13 @@ int stream_file_mmap(int fd, int sockfd, void* fptr, size_t fsz) {
 		count += n;
 		lseek(fd, count, SEEK_SET);  // notify the driver
 	
-		if(cfg.progress){
-			fprintf(stderr, "\r%.0f%% ",  100.0 * count / fsz );  //print progress
+		if(cfg.progress && fd_sz) {
+			fprintf(stderr, "\r %3.0f%% ", 100.0 * count / fd_sz );  //print progress
 		}
 		
 	} while ( read(fd, &tmp, sizeof(tmp) ) && count < fsz); /* sleeps here */
 	
-	fprintf(stdout,"%u  ", count);
+	fprintf(stdout, "%u ", count);
 	
 	return 0;
 }
@@ -139,6 +139,7 @@ int main ( int argc, char ** argv)
 	void * fptr;
 	unsigned long fsz;
 	unsigned repeat_cnt;
+
 	
 	if (parse_opts(argc, argv))
 		exit(EXIT_FAILURE);
