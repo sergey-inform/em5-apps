@@ -32,7 +32,7 @@ const char * ARGS = ""
 "  -x: \t send several times (useful for debugging). \n"
 "  -h \t display help\n";
 const char * CONTRIB = "Written by Sergey Ryzhikov <sergey.ryzhikov@ihep.ru>, 03.2017.";
-const char * VERSION = "v19.11";
+const char * VERSION = "v20.3";
 
 struct conf {
 	size_t mmap_sz;
@@ -107,7 +107,7 @@ int stream_file_mmap(int fd, int sockfd, void* fptr, size_t fsz) {
 
 		assert(fd_sz <= (off_t)fsz);
 		
-		n = write( sockfd, p, (fd_sz - count) );
+		n = write( sockfd, ((char*)p + count), (fd_sz - count) );
 		if (n < 0) { 
 			if (errno == EAGAIN) 
 				continue; 
