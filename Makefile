@@ -1,5 +1,5 @@
 INCDIRS = -I./include
-CFLAGS = -g -O -Wall -W ${INCDIRS}
+CFLAGS = -g -O3 -Wall -W ${INCDIRS}
 LDFLAGS = -Wl,-rpath,. # add current dir to library search path
 
 INSTALLDIR = /home/user/nfsroot/root/

@@ -50,9 +50,18 @@ void pchngen(void)
 void pedgen(void)
 /** generate event */
 {
-	pxabus_apw((1 << 16) + (2044 << 5) + 20);	// set T1 output to 1
-	pxabus_apw((2044 << 5) + 20);	// set T1 output to 0
+    //~ // gen pulse using test EM02 module
+	//~ pxabus_apw((1 << 16) + (2044 << 5) + 20);	// set T1 output to 1
+	//~ pxabus_apw((2044 << 5) + 20);	// set T1 output to 0
+    
+    // gen pulse from test output of the EM5
+	volatile long cmd_reg_save;
+	cmd_reg_save = *(long *)(ioaddr+0x18);
+	*(long *)(ioaddr+0x18)=cmd_reg_save | 0x80; // generate test output pulse
+	*(long *)(ioaddr+0x18)=cmd_reg_save; // turn off test output pulse	
+
 	usleep(10);			// wait for ADC end of conversion
+	
 	*(long *) (ioaddr + 4) = 1;	// generate software trigger (start PCHI) 
 	usleep(100);
 }
@@ -113,7 +122,7 @@ ssize_t get_data(uint32_t * data, unsigned max)
 					*pdata++ = tmp;
 			}
 			
-			//~ fprintf(stderr, "get_data %x %x\n", tmp, stat);
+			//~fprintf(stderr, "get_data %x %x\n", tmp, stat);
 		}
 		else {
 			break;	// no more data in fifo
@@ -164,7 +173,7 @@ int clear_peds(void)
 	for (i = 0; i < modcount; i++) {
 		data = pedbuf[i];
 		m = data & 0xff;
-		//~ printf("i %d mod %d\n",i, m);
+		 //printf("i %d mod %d\n",i, m);
 		
 		if (m > 18)  // not more than 18 modules in crate
 			break;
@@ -185,7 +194,7 @@ static void read_peds()
 	int i = 0;
 	uint32_t data; 
 
-	dbgprintf("Cleaned up the FIFO...");
+	dbgprintf("Cleaning up the FIFO...");
 	if (get_data(pedbuf, PEDBUF_LEN) < 0)
 		exit(-1); // miss error
 	dbgprintf("ok\n");
@@ -263,8 +272,8 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	//~ jtaggpio_init(sysaddr);
-	//~ xilbus_init(sysaddr);
+	 //~jtaggpio_init(sysaddr);
+	 //~xilbus_init(sysaddr);
 
 	ioaddr = mmap(0, 0x10000, PROT_READ | PROT_WRITE, MAP_SHARED, memfd,
 			 XILBUS);
