@@ -17,6 +17,8 @@ arm: ARCH = arm
 arm: CC = /home/user/toolchain/arm-linux-gcc
 arm: clean $(PROGS)
 
+
+
 clean:
 	rm -f *.o $(PROGS)
 
