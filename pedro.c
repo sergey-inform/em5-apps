@@ -171,7 +171,7 @@ int clear_peds(void)
 
     for (i = 0; i < modcount; i++) {
         data = pedbuf[i];
-        m = data & 0xff;
+        m = data & 0x1f;
         // printf("i %d mod %d\n",i, m);
 
         if (m > 18)  // not more than 18 modules in crate
@@ -235,7 +235,7 @@ static void read_peds(int n) {
             val = data >> 16;
             
             if (mod < N_MOD && chan < CHAN_PER_MOD) {
-				pedmem[mod+chan+i] = val;
+				pedmem[(mod*CHAN_PER_MOD+chan)*n+i] = val;
 			}
 		}		
 	}
@@ -252,8 +252,8 @@ static void read_peds(int n) {
         val = 0;
         cnt = 0;
         for (i = 0; i < n; i++) {
-			if( pedmem[mod+chan+i]) {
-				val += pedmem[mod+chan+i];
+			if( pedmem[(mod*CHAN_PER_MOD+chan)*n + i]) {
+				val += pedmem[(mod*CHAN_PER_MOD+chan)*n + i];
 				cnt += 1; 
 			}
 		}
@@ -262,7 +262,7 @@ static void read_peds(int n) {
 		} else {
 			val_avg = 0;
 		}
-        data = (data & 0xff) + (val_avg << 16);
+        data = (data & 0xffff) + (val_avg << 16);
         pxabus_apw(data + (cfg.threshold << 16));  /// write pedestals + thresholds
 		pedbuf[j] = data;
     }
@@ -279,7 +279,7 @@ static void read_peds(int n) {
 			chan = (data >> 5) & 0x7ff;
 			printf("\n%02d %02d : ", mod, chan);
 			for (i = 0; i < n; i++) {
-				val = pedmem[mod+chan+i];
+				val = pedmem[(mod*CHAN_PER_MOD+chan)*n + i];
 				printf("%d ", val);
 			}
 		}
@@ -296,7 +296,7 @@ void parse_options(int argc, char **argv) {
     int opt;
     opterr = 1;  /// 1 is to print error messages
 
-    while ((opt = getopt(argc, argv, "hxt:")) != -1) {
+    while ((opt = getopt(argc, argv, "hxn:t:")) != -1) {
         switch (opt) {
         case 't':
             cfg.threshold = atoi(optarg);
